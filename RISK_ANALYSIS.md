@@ -9,14 +9,14 @@
 - **Likelihood:** Medium-High
 - **Impact:** You'd need to either buy much larger servers (256-512GB RAM = higher cost), aggressively prune the graph, or switch databases entirely — all painful mid-flight.
 - **Mitigation:** Phase 0 must include a **RAM benchmark**: load a sample of real SUI data (1 day) into Memgraph, measure memory consumption per node/edge, then extrapolate. Do this before committing to 30 days of ingestion.
-- **Status:** OPEN — validate in Phase 0
+- **Status:** MITIGATED — Strategy: load 7 days full detail (fits 128GB), run compaction job to aggregate older data into `TRANSACTED_WITH` edges (deleting Transaction/Object nodes after 7 days). This preserves wallet graph for analytics while keeping RAM bounded. Measure actual RAM after initial load to calibrate.
 
 ### R2. SUI GraphQL API doesn't expose enough data
 - **Risk:** The public GraphQL endpoint may not return all fields you need (e.g., full object mutation details, inner transaction effects, coin type on transfers). You won't know until Phase 0.
 - **Likelihood:** Medium
 - **Impact:** If critical fields are missing, you're forced to run a SUI full node from day one — which adds significant complexity and delays the prototype by 1-2 weeks.
 - **Mitigation:** Phase 0 discovery sprint. Have a fallback plan for running a full node on dev machines if needed. Know the disk/CPU requirements in advance.
-- **Status:** OPEN — validate in Phase 0
+- **Status:** RESOLVED — Phase 0 confirmed all Layer 1 fields available via public API. See `docs/data-dictionary.md`.
 
 ### R3. Solo developer bottleneck
 - **Risk:** You're building Python ETL + Java API + React frontend + Memgraph + Kubernetes. That's at least 4 different technology domains. Any illness, burnout, or unexpected complexity in one area blocks everything.
@@ -111,8 +111,8 @@
 
 | Risk | Severity | Likelihood | Priority | Status |
 |------|----------|-----------|----------|--------|
-| R1. Memgraph RAM limits | Critical | Medium-High | Validate in Phase 0 | OPEN |
-| R2. GraphQL API gaps | Critical | Medium | Validate in Phase 0 | OPEN |
+| R1. Memgraph RAM limits | Critical | Medium-High | 7-day load + compaction | MITIGATED |
+| R2. GraphQL API gaps | Critical | Medium | Validated in Phase 0 | RESOLVED |
 | R3. Solo developer bottleneck | Critical | High | Cut prototype scope | ACCEPTED |
 | R4. USD value complexity | High | High | Defer to Phase 2 | ACCEPTED |
 | R5. MAGE algorithm performance | High | Medium | Batch, don't query-time | OPEN |
@@ -140,3 +140,6 @@
 | 2026-03-11 | Defer Pulsar to Phase 2 | Reduces prototype complexity (R3). Indexer writes directly to Memgraph in Phase 1. |
 | 2026-03-11 | Defer USD values to Phase 2 | Price feed integration is a sub-project (R4). Prototype uses SUI-denominated values. |
 | 2026-03-11 | Broker choice open for Phase 2 | Pulsar is the target but lighter alternatives (Redpanda, Redis Streams) will be evaluated (R6). |
+| 2026-03-11 | R2 validated: Public GraphQL API sufficient | Phase 0 confirmed all Layer 1 fields available. No full node needed for prototype. |
+| 2026-03-11 | 7-day initial load + compaction strategy (R1) | Start with 7 days full detail (~30M txs, fits 128GB). Build compaction job to aggregate older data into TRANSACTED_WITH edges, deleting Transaction/Object nodes after 7 days. Measure actual RAM before scaling to more days. |
+| 2026-03-11 | No selective indexing | All transactions must be ingested — filtering creates blind spots that break graph traversal. |
