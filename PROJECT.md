@@ -70,23 +70,21 @@ SUI Full Node / Checkpoint Store
 ```
 SUI GraphQL API (public endpoint)
             |
-     Indexer (Python)
-            |
-      Apache Pulsar
-            |
-     Pulsar Consumer → Memgraph
+     Indexer (Python) → Memgraph (direct write)
             |
      Spring Boot REST API
             |
      React + Neovis.js Dashboard
 ```
 
+**Note:** No message broker in Phase 1. Indexer writes directly to Memgraph to reduce complexity. Message broker (Pulsar or lighter alternative) introduced in Phase 2 when multi-consumer patterns are needed.
+
 ### 4.3 Key Architectural Decisions
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
 | Graph DB | **Memgraph** | Free graph algorithms (PageRank, community detection via MAGE), higher write throughput than Neo4j, in-memory performance, Bolt protocol compatible with Neovis.js |
-| Messaging | **Apache Pulsar** | Decouples indexer from DB, replay capability, multi-consumer support (graph DB + ClickHouse + archiver), backpressure handling. Team has existing Pulsar experience. |
+| Messaging (Phase 2+) | **Apache Pulsar** (or lighter alternative: Redpanda, Redis Streams) | Decouples indexer from DB, replay capability, multi-consumer support. Deferred from prototype to reduce complexity. Team has existing Pulsar experience. |
 | API layer | **Java / Spring Boot** | Production stability, strong typing, mature ecosystem for long-running services |
 | Indexer | **Python** | Fast prototyping, good SUI SDK support, natural for ETL pipelines |
 | Warm storage | **ClickHouse** | Columnar analytics on full transaction history, time-series queries |
@@ -118,7 +116,7 @@ The schema is built in layers. Each layer adds new node types and relationships 
 |------|-----------|
 | `Wallet` | address, label?, first_seen, last_seen |
 | `Transaction` | digest, timestamp, gas_used, gas_price, gas_budget |
-| `Object` | id, type, coin_type?, value?, value_usd? |
+| `Object` | id, type, coin_type?, value?, value_usd? (Phase 2 — SUI-denominated only in prototype) |
 
 **Relationships:**
 
@@ -238,12 +236,12 @@ Memgraph's in-memory model fits perfectly on dedicated hardware — 128GB RAM ho
 
 Kubernetes (K3s) for orchestration. Each component is a container:
 - Memgraph
-- Apache Pulsar
 - Python indexer
 - Spring Boot API
 - React frontend
-- ClickHouse (when warm tier is added)
-- MinIO (when cold tier is added)
+- Message broker (Phase 2+)
+- ClickHouse (Phase 2+)
+- MinIO (Phase 3+)
 
 ---
 
@@ -267,7 +265,7 @@ Kubernetes (K3s) for orchestration. Each component is a container:
 **Goal:** Working end-to-end system with the killer visualization.
 
 1. Indexer reads last 30 days of SUI data via GraphQL API
-2. Data flows through Pulsar into Memgraph
+2. Indexer writes directly to Memgraph (no message broker in Phase 1)
 3. Layer 1 graph schema (Wallets, Transactions, Objects)
 4. Spring Boot API exposes 3-5 Cypher queries via REST
 5. React + Neovis.js dashboard with force-directed whale cluster map
@@ -280,9 +278,11 @@ Kubernetes (K3s) for orchestration. Each component is a container:
 - Transaction path between two wallets
 - Wallet activity timeline
 
-### Phase 2 — DeFi Layer (Month 2)
+### Phase 2 — DeFi Layer + Infrastructure Hardening (Month 2)
 
 - Add Layer 2 schema (Packages, Modules, Events)
+- Introduce message broker (Pulsar, Redpanda, or Redis Streams — evaluated at that point)
+- USD price feed integration (CoinGecko API, DefiLlama)
 - DEX swap tracking and visualization
 - Wash trading detection algorithms
 - Protocol interaction mapping
@@ -322,7 +322,8 @@ graphen/
 |   |   |-- object_transformer.py
 |   |   |-- wallet_transformer.py
 |   |-- loaders/
-|   |   |-- pulsar_producer.py
+|   |   |-- memgraph_loader.py      # Phase 1: direct write
+|   |   |-- pulsar_producer.py      # Phase 2: write to broker
 |   |-- config/
 |   |   |-- settings.py
 |   |-- main.py
@@ -349,7 +350,7 @@ graphen/
 |   |-- package.json
 |   |-- Dockerfile
 |
-|-- consumers/                      # Pulsar → Memgraph writer(s)
+|-- consumers/                      # Phase 2+: Pulsar/broker → Memgraph writer(s)
 |   |-- graph_writer/
 |   |   |-- consumer.py
 |   |   |-- graph_loader.py
@@ -377,7 +378,7 @@ graphen/
 |-----------|-----------|----------|
 | Blockchain data source | SUI GraphQL API → SUI Full Node | - |
 | Indexer / ETL | Custom Python service | Python |
-| Message broker | Apache Pulsar | - |
+| Message broker (Phase 2+) | Apache Pulsar / Redpanda / Redis Streams (TBD) | - |
 | Graph database | Memgraph (Community/Free) | Cypher |
 | Graph algorithms | Memgraph MAGE (PageRank, community detection, etc.) | - |
 | Warm analytics | ClickHouse (Phase 2+) | SQL |
@@ -389,7 +390,13 @@ graphen/
 
 ---
 
-## 11. Open Questions
+## 11. Risk Analysis
+
+See [RISK_ANALYSIS.md](RISK_ANALYSIS.md) for the full risk assessment, mitigation strategies, and decisions log.
+
+---
+
+## 12. Open Questions
 
 - [ ] Phase 0 outcome: Does the SUI public GraphQL API expose all fields needed for Layer 1, or do we need a full node from the start?
 - [ ] Exact Memgraph RAM requirements after benchmarking with real SUI data
