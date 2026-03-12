@@ -1,0 +1,48 @@
+version: "3.8"
+
+services:
+  memgraph:
+    image: memgraph/memgraph-mage
+    ports:
+      - "7687:7687"
+      - "7444:7444"
+    volumes:
+      - memgraph-data:/var/lib/memgraph
+    command:
+      - "--storage-snapshot-interval-sec=300"
+      - "--storage-wal-enabled=true"
+      - "--log-level=WARNING"
+    networks:
+      - graphen
+
+  memgraph-lab:
+    image: memgraph/lab
+    ports:
+      - "3000:3000"
+    depends_on:
+      - memgraph
+    environment:
+      - QUICK_CONNECT_MG_HOST=memgraph
+      - QUICK_CONNECT_MG_PORT=7687
+    networks:
+      - graphen
+
+  indexer:
+    build:
+      context: ../indexer
+      dockerfile: Dockerfile
+    depends_on:
+      - memgraph
+    environment:
+      - MEMGRAPH_HOST=memgraph
+      - MEMGRAPH_PORT=7687
+      - SUI_GRAPHQL_URL=https://graphql.mainnet.sui.io/graphql
+    networks:
+      - graphen
+
+networks:
+  graphen:
+    driver: bridge
+
+volumes:
+  memgraph-data:
